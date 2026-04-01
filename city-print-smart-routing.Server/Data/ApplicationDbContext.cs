@@ -7,6 +7,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 {
     public DbSet<Contact> Contacts { get; set; }
     public DbSet<SyncLog> SyncLogs { get; set; }
+    public DbSet<RoutingLog> RoutingLogs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

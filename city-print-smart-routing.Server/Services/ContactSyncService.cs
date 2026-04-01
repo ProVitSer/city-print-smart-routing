@@ -166,8 +166,6 @@ public class ContactSyncService(
         {
             logger.LogError(ex, "Ошибка при синхронизации телефонной книги 3CX");
 
-            if (pbxService is PbxPhonebookService svc)
-                svc.ResetConnection();
 
             log.EndTime = DateTime.UtcNow;
             log.Status  = "Error";

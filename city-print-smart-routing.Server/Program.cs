@@ -14,13 +14,11 @@ try
 
     var builder = Host.CreateApplicationBuilder(args);
 
-    // Windows Service
     builder.Services.AddWindowsService(options =>
     {
         options.ServiceName = "city-print-smart-routing";
     });
 
-    // Serilog
     builder.Services.AddSerilog((ctx, config) =>
     {
         config
@@ -41,25 +39,36 @@ try
         builder.Configuration.GetSection(PbxSettingsOptions.SectionName));
     builder.Services.Configure<SyncSettingsOptions>(
         builder.Configuration.GetSection(SyncSettingsOptions.SectionName));
+    builder.Services.Configure<RoutingSettingsOptions>(
+        builder.Configuration.GetSection(RoutingSettingsOptions.SectionName));
 
-    // База данных SQLite
+    // База данных
     builder.Services.AddDbContext<ApplicationDbContext>(options =>
         options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-    // HTTP клиент (для запросов к 1С)
+    // HTTP клиент (для 1С)
     builder.Services.AddHttpClient();
 
-    // Сервисы
+    // Сервисы синхронизации
     builder.Services.AddScoped<IOneCService, OneCService>();
-    builder.Services.AddSingleton<IPbxPhonebookService, PbxPhonebookService>();
     builder.Services.AddScoped<IContactSyncService, ContactSyncService>();
 
-    // Фоновая служба
+    // CallRoutingService — singleton, управляет подключением к 3CX и маршрутизацией вызовов.
+    // Регистрируем как singleton, чтобы PbxPhonebookService мог получить то же соединение.
+    builder.Services.AddSingleton<CallRoutingService>();
+    builder.Services.AddSingleton<IPbxConnectionProvider>(sp =>
+        sp.GetRequiredService<CallRoutingService>());
+    builder.Services.AddHostedService(sp =>
+        sp.GetRequiredService<CallRoutingService>());
+
+    // PbxPhonebookService использует соединение из CallRoutingService
+    builder.Services.AddSingleton<IPbxPhonebookService, PbxPhonebookService>();
+
+    // Фоновая служба синхронизации контактов (1С → БД → телефонная книга 3CX)
     builder.Services.AddHostedService<SyncBackgroundService>();
 
     var host = builder.Build();
 
-    // Автосоздание БД при первом запуске
     using (var scope = host.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
