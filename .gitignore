@@ -1,0 +1,28 @@
+# .NET build output
+bin/
+obj/
+
+# Visual Studio / Rider
+*.user
+*.suo
+.vs/
+.idea/
+*.DS_Store
+
+# SQLite database (runtime data, не коммитим)
+*.db
+*.db-shm
+*.db-wal
+
+# Published output
+publish-output/
+
+# Logs
+logs/
+
+# Local config overrides (для локальных паролей/настроек)
+appsettings.Local.json
+
+# 3CX native DLLs — не коммитим, берутся из установки 3CX или call-magnet
+3cxpscomcpp2.dll
+tcxpscom_native.dll
