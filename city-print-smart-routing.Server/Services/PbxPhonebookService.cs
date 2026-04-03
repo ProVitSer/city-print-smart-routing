@@ -47,9 +47,8 @@ public class PbxPhonebookService(
         if (!connection.IsConnected)
             throw new InvalidOperationException("3CX не подключена");
 
-        // Русский формат ФИО: Фамилия Имя Отчество
         var parts     = contact.ContactName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-        var lastName  = parts.Length > 0 ? parts[0] : contact.ContactName;
+        var lastName  = $"{contact.ClientName} {(parts.Length > 0 ? parts[0] : contact.ContactName)}".Trim();
         var firstName = parts.Length > 1 ? parts[1] : string.Empty;
 
         var entry = PhoneSystem.GetTenant().CreatePhoneBookEntry();
@@ -96,5 +95,24 @@ public class PbxPhonebookService(
         }
 
         return Task.CompletedTask;
+    }
+
+    // ─── Удалить все контакты из телефонной книги ────────────────────────────
+
+    public Task<int> DeleteAllManagedAsync(CancellationToken ct = default)
+    {
+        if (!connection.IsConnected)
+            throw new InvalidOperationException("3CX не подключена");
+
+        var toDelete = PhoneSystem.GetTenant().PhoneBookEntries.ToList();
+
+        foreach (var entry in toDelete)
+            entry.Delete();
+
+        logger.LogInformation(
+            "Удалено {Count} контактов из телефонной книги 3CX",
+            toDelete.Count);
+
+        return Task.FromResult(toDelete.Count);
     }
 }

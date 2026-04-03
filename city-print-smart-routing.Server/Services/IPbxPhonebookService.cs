@@ -15,4 +15,7 @@ public interface IPbxPhonebookService
 
     /// <summary>Удалить контакт из телефонной книги 3CX по номеру телефона.</summary>
     Task DeleteContactByPhoneAsync(string clientPhone, CancellationToken ct = default);
+
+    /// <summary>Удалить все контакты с тегом CPSR из телефонной книги 3CX.</summary>
+    Task<int> DeleteAllManagedAsync(CancellationToken ct = default);
 }

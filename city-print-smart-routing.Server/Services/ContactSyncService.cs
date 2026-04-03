@@ -23,7 +23,21 @@ public class ContactSyncService(
         {
             logger.LogInformation("=== Начало выгрузки контактов из 1С ===");
 
-            var oneCContacts = await oneCService.FetchContactsAsync(ct);
+            // Сначала получаем данные из 1С — если не удалось, БД не трогаем
+            List<OneCContactDto> oneCContacts;
+            try
+            {
+                oneCContacts = await oneCService.FetchContactsAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Не удалось получить данные из 1С — локальная БД не изменена");
+                log.EndTime = DateTime.UtcNow;
+                log.Status  = "Error";
+                log.Message = $"Ошибка получения данных из 1С: {ex.Message}";
+                await db.SaveChangesAsync(CancellationToken.None);
+                return new SyncResult(false, 0, 0, 0, log.Message);
+            }
 
             // Нормализовать телефоны, оставить только валидные,
             // дедублицировать по нормализованному ClientPhone
@@ -37,61 +51,42 @@ public class ContactSyncService(
                 "Из 1С получено {Total} записей, валидных (уникальных по телефону): {Valid}",
                 oneCContacts.Count, validByPhone.Count);
 
+            // Удаляем все существующие контакты из БД
             var existing = await db.Contacts.ToListAsync(ct);
-            var existingByPhone = existing.ToDictionary(
-                c => c.ClientPhone, StringComparer.OrdinalIgnoreCase);
+            db.Contacts.RemoveRange(existing);
 
-            int added = 0, deleted = 0, unchanged = 0;
-
-            // Добавить новые (есть в 1С, нет в БД)
+            // Добавляем все актуальные контакты из 1С заново
             foreach (var (phone, dto) in validByPhone)
             {
-                if (existingByPhone.ContainsKey(phone))
-                {
-                    unchanged++;
-                    continue;
-                }
-
                 db.Contacts.Add(new Contact
                 {
                     ContactID       = dto.ContactID,
                     ContactName     = dto.ContactName,
                     ManagerLocPhone = dto.ManagerLocPhone,
                     ManagerName     = dto.ManagerName,
-                    ClientPhone     = phone,           // сохраняем нормализованный номер
+                    ClientPhone     = phone,
                     ClientName      = dto.ClientName,
                     CreatedAt       = DateTime.UtcNow,
                     UpdatedAt       = DateTime.UtcNow
                 });
-                added++;
-                logger.LogDebug("+ Добавлен: {Name} ({Phone})", dto.ContactName, phone);
-            }
-
-            // Удалить устаревшие (есть в БД, нет в ответе 1С)
-            foreach (var contact in existing)
-            {
-                if (!validByPhone.ContainsKey(contact.ClientPhone))
-                {
-                    db.Contacts.Remove(contact);
-                    deleted++;
-                    logger.LogDebug("- Удалён: {Name} ({Phone})", contact.ContactName, contact.ClientPhone);
-                }
             }
 
             await db.SaveChangesAsync(ct);
 
-            var msg = $"Добавлено: {added}, удалено: {deleted}, без изменений: {unchanged}";
+            int added = validByPhone.Count;
+            int deleted = existing.Count;
+            var msg = $"Очищено: {deleted}, добавлено: {added}";
             logger.LogInformation("=== Выгрузка из 1С завершена. {Message} ===", msg);
 
-            log.EndTime  = DateTime.UtcNow;
-            log.Status   = "Success";
-            log.Added    = added;
-            log.Deleted  = deleted;
-            log.Unchanged = unchanged;
-            log.Message  = msg;
+            log.EndTime   = DateTime.UtcNow;
+            log.Status    = "Success";
+            log.Added     = added;
+            log.Deleted   = deleted;
+            log.Unchanged = 0;
+            log.Message   = msg;
             await db.SaveChangesAsync(ct);
 
-            return new SyncResult(true, added, deleted, unchanged, msg);
+            return new SyncResult(true, added, deleted, 0, msg);
         }
         catch (Exception ex)
         {
@@ -116,51 +111,27 @@ public class ContactSyncService(
         {
             logger.LogInformation("=== Начало синхронизации телефонной книги 3CX ===");
 
+            // Удаляем все наши контакты из 3CX
+            int deleted = await pbxService.DeleteAllManagedAsync(ct);
+
+            // Добавляем все актуальные контакты из локальной БД заново
             var localContacts = await db.Contacts.ToListAsync(ct);
-            var localPhones   = localContacts
-                .Select(c => c.ClientPhone)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            // Контакты с тегом CPSR в телефонной книге 3CX
-            var phonebookPhones = await pbxService.GetManagedPhonesAsync(ct);
-
-            int added = 0, deleted = 0, unchanged = 0;
-
-            // Добавить в 3CX то, чего ещё нет
             foreach (var contact in localContacts)
-            {
-                if (phonebookPhones.Contains(contact.ClientPhone))
-                {
-                    unchanged++;
-                    continue;
-                }
-
                 await pbxService.AddContactAsync(contact, ct);
-                added++;
-            }
 
-            // Удалить из 3CX то, чего нет в локальной БД
-            foreach (var phone in phonebookPhones)
-            {
-                if (!localPhones.Contains(phone))
-                {
-                    await pbxService.DeleteContactByPhoneAsync(phone, ct);
-                    deleted++;
-                }
-            }
-
-            var msg = $"Добавлено: {added}, удалено: {deleted}, без изменений: {unchanged}";
+            int added = localContacts.Count;
+            var msg = $"Очищено: {deleted}, добавлено: {added}";
             logger.LogInformation("=== Синхронизация телефонной книги завершена. {Message} ===", msg);
 
             log.EndTime   = DateTime.UtcNow;
             log.Status    = "Success";
             log.Added     = added;
             log.Deleted   = deleted;
-            log.Unchanged = unchanged;
+            log.Unchanged = 0;
             log.Message   = msg;
             await db.SaveChangesAsync(ct);
 
-            return new SyncResult(true, added, deleted, unchanged, msg);
+            return new SyncResult(true, added, deleted, 0, msg);
         }
         catch (Exception ex)
         {

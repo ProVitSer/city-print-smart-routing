@@ -114,6 +114,12 @@ public class CallRoutingService : BackgroundService, IPbxConnectionProvider
 
     private void LoadNativeDll(string? appPath)
     {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            _logger.LogInformation("Linux: нативная библиотека 3CX не требуется, подключение через TCP");
+            return;
+        }
+
         var candidates = new List<string>();
 
         if (!string.IsNullOrWhiteSpace(appPath))

@@ -14,10 +14,7 @@ try
 
     var builder = Host.CreateApplicationBuilder(args);
 
-    builder.Services.AddWindowsService(options =>
-    {
-        options.ServiceName = "city-print-smart-routing";
-    });
+    builder.Services.AddSystemd();
 
     builder.Services.AddSerilog((ctx, config) =>
     {
