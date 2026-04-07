@@ -188,12 +188,49 @@ public class CallRoutingService : BackgroundService, IPbxConnectionProvider
 
     // ─── Маршрутизация ────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Проверяет, попадает ли текущее местное время в рабочий диапазон маршрутизации.
+    /// Если WorkingHoursStart/End не заданы — всегда возвращает true.
+    /// </summary>
+    private bool IsWithinWorkingHours()
+    {
+        if (string.IsNullOrWhiteSpace(_routingSettings.WorkingHoursStart) ||
+            string.IsNullOrWhiteSpace(_routingSettings.WorkingHoursEnd))
+            return true;
+
+        if (!TimeOnly.TryParse(_routingSettings.WorkingHoursStart, out var start) ||
+            !TimeOnly.TryParse(_routingSettings.WorkingHoursEnd, out var end))
+        {
+            _logger.LogWarning(
+                "Некорректный формат рабочего времени: Start={Start}, End={End}. Маршрутизация работает круглосуточно.",
+                _routingSettings.WorkingHoursStart, _routingSettings.WorkingHoursEnd);
+            return true;
+        }
+
+        var now = TimeOnly.FromDateTime(DateTime.Now);
+
+        // Поддержка диапазонов через полночь (например 22:00–06:00)
+        return start <= end
+            ? now >= start && now < end
+            : now >= start || now < end;
+    }
+
     private async Task RouteCallAsync(ActiveConnection ac, string callerRaw)
     {
         var callerNormalized = PhoneHelper.Normalize(callerRaw);
         var last10 = callerNormalized.Length >= 10
             ? callerNormalized[^10..]
             : callerNormalized;
+
+        // Проверка рабочего времени
+        if (!IsWithinWorkingHours())
+        {
+            _logger.LogInformation(
+                "Вызов от {Caller} вне рабочего времени ({Start}–{End}) — стандартная маршрутизация",
+                callerRaw, _routingSettings.WorkingHoursStart, _routingSettings.WorkingHoursEnd);
+            await SaveRoutingLogAsync(callerNormalized, null, "OutOfHours", null);
+            return;
+        }
 
         _logger.LogInformation(
             "Поиск контакта по последним 10 цифрам: {Last10} (исходный: {Raw})",
