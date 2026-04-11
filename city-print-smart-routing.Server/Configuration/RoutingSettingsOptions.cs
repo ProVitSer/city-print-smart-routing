@@ -20,4 +20,18 @@ public class RoutingSettingsOptions
     /// Если не задано — маршрутизация работает круглосуточно.
     /// </summary>
     public string? WorkingHoursEnd { get; set; }
+
+    /// <summary>
+    /// Рабочие дни недели. Если не задано или пустой список — маршрутизация работает каждый день.
+    /// Допустимые значения: "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday".
+    /// По умолчанию: с понедельника по пятницу.
+    /// </summary>
+    public DayOfWeek[] WorkingDays { get; set; } =
+    [
+        DayOfWeek.Monday,
+        DayOfWeek.Tuesday,
+        DayOfWeek.Wednesday,
+        DayOfWeek.Thursday,
+        DayOfWeek.Friday
+    ];
 }

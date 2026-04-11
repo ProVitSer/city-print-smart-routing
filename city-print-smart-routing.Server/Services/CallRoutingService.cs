@@ -189,11 +189,19 @@ public class CallRoutingService : BackgroundService, IPbxConnectionProvider
     // ─── Маршрутизация ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Проверяет, попадает ли текущее местное время в рабочий диапазон маршрутизации.
-    /// Если WorkingHoursStart/End не заданы — всегда возвращает true.
+    /// Проверяет, попадает ли текущее местное время и день недели в рабочий диапазон маршрутизации.
+    /// Если WorkingHoursStart/End не заданы — время не проверяется.
+    /// Если WorkingDays пустой — дни не проверяются.
     /// </summary>
     private bool IsWithinWorkingHours()
     {
+        var now = DateTime.Now;
+
+        // Проверка рабочего дня
+        if (_routingSettings.WorkingDays.Length > 0 &&
+            !_routingSettings.WorkingDays.Contains(now.DayOfWeek))
+            return false;
+
         if (string.IsNullOrWhiteSpace(_routingSettings.WorkingHoursStart) ||
             string.IsNullOrWhiteSpace(_routingSettings.WorkingHoursEnd))
             return true;
@@ -207,12 +215,12 @@ public class CallRoutingService : BackgroundService, IPbxConnectionProvider
             return true;
         }
 
-        var now = TimeOnly.FromDateTime(DateTime.Now);
+        var time = TimeOnly.FromDateTime(now);
 
         // Поддержка диапазонов через полночь (например 22:00–06:00)
         return start <= end
-            ? now >= start && now < end
-            : now >= start || now < end;
+            ? time >= start && time < end
+            : time >= start || time < end;
     }
 
     private async Task RouteCallAsync(ActiveConnection ac, string callerRaw)
@@ -222,12 +230,15 @@ public class CallRoutingService : BackgroundService, IPbxConnectionProvider
             ? callerNormalized[^10..]
             : callerNormalized;
 
-        // Проверка рабочего времени
+        // Проверка рабочего времени и дней
         if (!IsWithinWorkingHours())
         {
             _logger.LogInformation(
-                "Вызов от {Caller} вне рабочего времени ({Start}–{End}) — стандартная маршрутизация",
-                callerRaw, _routingSettings.WorkingHoursStart, _routingSettings.WorkingHoursEnd);
+                "Вызов от {Caller} вне рабочего расписания (дни: {Days}, время: {Start}–{End}) — стандартная маршрутизация",
+                callerRaw,
+                string.Join(", ", _routingSettings.WorkingDays),
+                _routingSettings.WorkingHoursStart,
+                _routingSettings.WorkingHoursEnd);
             await SaveRoutingLogAsync(callerNormalized, null, "OutOfHours", null);
             return;
         }
